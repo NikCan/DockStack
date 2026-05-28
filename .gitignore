@@ -10,3 +10,6 @@ test-results
 .env.local
 .env.production
 .env.*.local
+
+# git guide
+git-guide.md

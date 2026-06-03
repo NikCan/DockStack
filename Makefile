@@ -50,6 +50,7 @@ push: push-back push-front ## Запушить оба образа
 
 pull: ## Скачать образы с Docker Hub (НЕ собирать локально)
 	docker compose --env-file .env.development.compose pull
+# 	DOCKER_DEFAULT_PLATFORM=linux/amd64 docker compose --env-file .env.development.compose pull
 
 up: ## Поднять стек в фоне (compose сам соблюдёт depends_on/healthcheck)
 	docker compose --env-file .env.development.compose up -d

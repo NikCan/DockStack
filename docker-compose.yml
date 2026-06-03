@@ -9,42 +9,41 @@
 
 services:
   db:
-    # TODO — база данных:
-    #   - указать готовый образ postgres 16-alpine
-    #   - подать переменные окружения из соответствующего env-файла
-    #   - пробросить порт наружу на 15432 (внешний выбран так, чтобы не конфликтовать
-    #     с локально установленным Postgres)
-    #   - персистить данные через NAMED VOLUME (не bind-mount); имя тома — pgdata
-    #   - добавить проверку готовности: запрос к самой БД через pg_isready,
-    #     с использованием POSTGRES_USER и POSTGRES_DB
-    #     ⚠️ переменные окружения внутри проверки экранируются двойным $$,
-    #     иначе compose попытается подставить их сам на этапе парсинга файла
-    #     (а нам надо, чтобы их разворачивал shell внутри контейнера в рантайме)
-    #   - подобрать осмысленные параметры проверки: как часто опрашивать, сколько
-    #     попыток до признания unhealthy, сколько ждать перед самой первой проверкой
+    image: postgres:16-alpine
+    env_file: .env.development.db
+    ports:
+      - "15432:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $$POSTGRES_USER -d $$POSTGRES_DB"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+      start_period: 5s
+
+    volumes:
+      - pgdata:/var/lib/postgresql/data
 
   back:
-    # TODO — backend (NestJS):
-    #   - указать образ, который ты публикуешь в свой Docker Hub репозиторий
-    #     (используй переменные DOCKERHUB_USERNAME и IMAGE_TAG)
-    #   - подать переменные окружения из соответствующего env-файла
-    #     (не забудь: в нём DB_HOST теперь смотрит на service-name из compose-сети)
-    #   - пробросить порт API на 13000
-    #   - выразить зависимость от базы: back не должен стартовать, пока БД не
-    #     ответит на healthcheck успешно (используй подходящую condition)
-    #   - примонтировать локальную папку с runtime-конфигом внутрь контейнера
-    #     по пути /app/config; делаем это READ-ONLY, чтобы контейнер физически
-    #     не мог изменить файл на хосте
+    image: ${DOCKERHUB_USERNAME}/todo-back:${IMAGE_TAG}
+    env_file: .env.development.back
+    ports:
+      - "13000:3000"
+    depends_on:
+      db:
+        condition: service_healthy
+    volumes:
+      - type: bind
+        source: ./app-config
+        target: /app/config
+        read_only: true
 
   front:
-    # TODO — frontend (nginx со статикой):
-    #   - указать образ из своего Docker Hub репозитория
-    #   - пробросить 80-й порт nginx наружу на 18080
-    #   - выразить зависимость от back, но НЕ через service_healthy:
-    #     у back в этом задании нет healthcheck, поэтому здесь нужна другая condition
-    #     (которая ждёт только запуска контейнера, не его health-статуса)
+    image: ${DOCKERHUB_USERNAME}/todo-front:${IMAGE_TAG}
+    ports:
+      - "18080:80"
+    depends_on:
+      back:
+        condition: service_started
 
 volumes:
-  # TODO — секция named volumes:
-  #   - объявить том, имя которого ты указал в сервисе db (без дополнительных опций,
-  #     пустого тела достаточно)
+  pgdata:

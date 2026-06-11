@@ -2,19 +2,20 @@ import { request, type APIRequestContext } from '@playwright/test';
 
 const API = process.env.E2E_API_URL ?? 'http://localhost:3000';
 
+// Курсовой shared-токен. То же значение прошито в back/src/test-reset/test-reset.controller.ts.
+const E2E_RESET_TOKEN = 'e2e-reset-course-DevOps-2026';
+
 /**
- * Wipe all todos via the API so each test starts from a clean state.
- * Single-user app — no auth needed.
+ * Wipe all todos via the protected reset endpoint so each test starts
+ * from a clean state. Works against any environment (local or deployed).
  */
 export async function resetTodos(api?: APIRequestContext) {
   const ctx = api ?? (await request.newContext({ baseURL: API }));
-  const res = await ctx.get('/todos');
+  const res = await ctx.post('/test/reset', {
+    headers: { 'x-e2e-reset-token': E2E_RESET_TOKEN },
+  });
   if (!res.ok()) {
-    throw new Error(`Failed to list todos: ${res.status()}`);
-  }
-  const todos: Array<{ id: string }> = await res.json();
-  for (const t of todos) {
-    await ctx.delete(`/todos/${t.id}`);
+    throw new Error(`Reset failed: ${res.status()} ${res.statusText()}`);
   }
   if (!api) await ctx.dispose();
 }

@@ -72,5 +72,8 @@ ps: ## Показать статус контейнеров
 e2e-install: ## Один раз: ставит npm-зависимости фронта и качает Chromium для Playwright
 	cd front && npm install && npx playwright install --with-deps chromium
 
-e2e: ## Прогнать Playwright-тесты против поднятого стека
+e2e: ## Прогнать Playwright-тесты против локального стека (через docker compose)
 	set -a && . ./.env.development.e2e && cd front && npm run e2e
+
+e2e-deployed: ## Прогнать Playwright-тесты против развернутого инстанса на VPS (нужен .env.production.e2e)
+	set -a && . ./.env.production.e2e && cd front && npm run e2e

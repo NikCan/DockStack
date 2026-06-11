@@ -11,7 +11,8 @@ const E2E_RESET_TOKEN = 'e2e-reset-course-DevOps-2026';
  */
 export async function resetTodos(api?: APIRequestContext) {
   const ctx = api ?? (await request.newContext({ baseURL: API }));
-  const res = await ctx.post('/test/reset', {
+  // Без ведущего слэша '/', чтобы URL-разрешение Playwright не отрезало '/api/' от E2E_API_URL
+  const res = await ctx.post('test/reset', {
     headers: { 'x-e2e-reset-token': E2E_RESET_TOKEN },
   });
   if (!res.ok()) {
@@ -25,7 +26,8 @@ export async function createTodoViaApi(
   description?: string,
 ): Promise<{ id: string; title: string; description: string | null }> {
   const ctx = await request.newContext({ baseURL: API });
-  const res = await ctx.post('/todos', {
+  // Без ведущего слэша '/', чтобы URL-разрешение Playwright не отрезало '/api/' от E2E_API_URL
+  const res = await ctx.post('todos', {
     data: { title, ...(description ? { description } : {}) },
   });
   if (!res.ok()) {
@@ -35,3 +37,4 @@ export async function createTodoViaApi(
   await ctx.dispose();
   return json;
 }
+

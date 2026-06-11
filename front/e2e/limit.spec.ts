@@ -14,11 +14,13 @@ test('rejects creation when maxTodos limit is reached', async () => {
   const ctx = await request.newContext({ baseURL: API });
 
   for (let i = 1; i <= 5; i++) {
-    const res = await ctx.post('/todos', { data: { title: `todo ${i}` } });
+    // Без ведущего слэша '/', чтобы URL-разрешение Playwright не отрезало '/api/' от E2E_API_URL
+    const res = await ctx.post('todos', { data: { title: `todo ${i}` } });
     expect(res.status(), `creating todo #${i} should succeed`).toBe(201);
   }
 
-  const overflow = await ctx.post('/todos', { data: { title: 'overflow' } });
+  // Без ведущего слэша '/', чтобы URL-разрешение Playwright не отрезало '/api/' от E2E_API_URL
+  const overflow = await ctx.post('todos', { data: { title: 'overflow' } });
   expect(overflow.status()).toBe(400);
 
   const body = (await overflow.json()) as { message?: string };

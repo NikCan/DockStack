@@ -77,3 +77,8 @@ e2e: ## Прогнать Playwright-тесты против локального
 
 e2e-deployed: ## Прогнать Playwright-тесты против развернутого инстанса на VPS (нужен .env.production.e2e)
 	set -a && . ./.env.production.e2e && cd front && npm run e2e
+
+# ---------- smoke (для hw4: lightweight verify после деплоя) ----------
+
+smoke-deployed: ## Read-only smoke-проверка задеплоенного стека (нужен .env.production.e2e)
+	set -a && . ./.env.production.e2e && bash scripts/smoke.sh

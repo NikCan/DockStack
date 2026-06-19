@@ -4,6 +4,7 @@ import { TypeOrmModule } from '@nestjs/typeorm';
 import { TodosModule } from './todos/todos.module';
 import { Todo } from './todos/todo.entity';
 import { TestResetModule } from './test-reset/test-reset.module';
+import { HealthModule } from './health/health.module';
 
 @Module({
   imports: [
@@ -23,6 +24,7 @@ import { TestResetModule } from './test-reset/test-reset.module';
     }),
     TodosModule,
     TestResetModule,
+    HealthModule,
   ],
 })
 export class AppModule {}

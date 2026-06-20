@@ -36,7 +36,9 @@ jobs:
           envs: DEPLOY_DIR, COMPOSE_SERVICES
           script: |
             set -e
-            cd "$DEPLOY_DIR"
+            # Разворачиваем ~ в путь к домашней директории $HOME, так как в переменных окружения ~ автоматически не раскрывается
+            DEPLOY_PATH="${DEPLOY_DIR/#\~/$HOME}"
+            cd "$DEPLOY_PATH"
 
             # Обновляем глобальный тег образа в .env.development.compose
             sed -i "s|^APP_VERSION=.*|APP_VERSION=sha-${{ github.sha }}|" .env.development.compose

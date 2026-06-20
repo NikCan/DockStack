@@ -1,0 +1,15 @@
+name: PR Check
+ 
+on:
+  pull_request:
+    branches: [week4]
+ 
+jobs:
+  checks:
+    uses: ./.github/workflows/typecheck.yaml
+    strategy:
+      fail-fast: false
+      matrix:
+        service: [back, front]
+    with:
+      service: ${{ matrix.service }}

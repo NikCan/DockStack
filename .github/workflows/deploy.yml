@@ -1,0 +1,45 @@
+name: Deploy Template
+
+on:
+  workflow_call:
+    inputs:
+      deploy_dir:
+        description: 'Путь к директории проекта на сервере'
+        required: true
+        type: string
+      compose_services:
+        description: 'Имена сервисов в docker-compose.yml (можно несколько через пробел)'
+        required: true
+        type: string
+    secrets:
+      SSH_HOST:
+        required: true
+      SSH_USER:
+        required: true
+      SSH_PRIVATE_KEY:
+        required: true
+
+jobs:
+  deploy_to_server:
+    name: Deploy to Server
+    runs-on: ubuntu-latest
+    steps:
+      - name: Execute deployment commands via SSH
+        uses: appleboy/ssh-action@v1
+        env:
+          DEPLOY_DIR: ${{ inputs.deploy_dir }}
+          COMPOSE_SERVICES: ${{ inputs.compose_services }}
+        with:
+          host: ${{ secrets.SSH_HOST }}
+          username: ${{ secrets.SSH_USER }}
+          key: ${{ secrets.SSH_PRIVATE_KEY }}
+          envs: DEPLOY_DIR, COMPOSE_SERVICES
+          script: |
+            cd $DEPLOY_DIR
+            
+            # Обновляем глобальный тег образа в .env.development.compose
+            sed -i "s|^APP_VERSION=.*|APP_VERSION=sha-${{ github.sha }}|" .env.development.compose
+            
+            # Перезапускаем все переданные сервисы разом
+            # Docker Compose корректно обработает список "back front"
+            docker compose up -d --no-deps $COMPOSE_SERVICES

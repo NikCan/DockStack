@@ -1,0 +1,61 @@
+name: Notify Template
+
+on:
+  workflow_call:
+    inputs:
+      checks_result:
+        type: string
+        required: true
+      build_result:
+        type: string
+        required: true
+      deploy_result:
+        type: string
+        required: true
+      verify_result:
+        type: string
+        required: true
+
+    secrets:
+      TELEGRAM_BOT_TOKEN:
+        required: true
+      TELEGRAM_CHAT_ID:
+        required: true
+
+jobs:
+  notify-tg:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Send Telegram Message
+        env:
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+          CHECKS: ${{ inputs.checks_result }}
+          BUILD: ${{ inputs.build_result }}
+          DEPLOY: ${{ inputs.deploy_result }}
+          VERIFY: ${{ inputs.verify_result }}
+          REPO: ${{ github.repository }}
+          BRANCH: ${{ github.ref_name }}
+          ACTOR: ${{ github.actor }}
+          URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          if [ "$CHECKS" != "success" ]; then
+            TEXT="❌ <b>Type-check упал</b>%0AПроект: $REPO @ $BRANCH%0A<a href=\"$URL\">Смотреть логи</a>"
+          elif [ "$BUILD" != "success" ]; then
+            TEXT="❌ <b>Build упал</b>%0AПроект: $REPO @ $BRANCH%0A<a href=\"$URL\">Смотреть логи</a>"
+          elif [ "$DEPLOY" != "success" ]; then
+            TEXT="❌ <b>Deploy упал</b>%0AПроект: $REPO @ $BRANCH%0A<a href=\"$URL\">Смотреть логи</a>"
+          elif [ "$VERIFY" != "success" ]; then
+            TEXT="❌ <b>Smoke-test упал</b>%0AПроект: $REPO @ $BRANCH%0A<a href=\"$URL\">Смотреть логи</a>"
+          else
+            TEXT="✅ <b>Deploy успешен</b>%0AПроект: $REPO @ $BRANCH%0AАвтор: $ACTOR"
+          fi
+
+          RESPONSE=$(curl -s -X POST "https://api.telegram.org/bot$TELEGRAM_BOT_TOKEN/sendMessage" \
+            -d "chat_id=$TELEGRAM_CHAT_ID" \
+            -d "parse_mode=HTML" \
+            -d "disable_web_page_preview=true" \
+            -d "text=$TEXT")
+          
+          echo "$RESPONSE"
+          echo "$RESPONSE" | grep -q '"ok":true' || { echo "Telegram API rejected"; exit 1; }

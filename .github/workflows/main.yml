@@ -1,0 +1,62 @@
+name: Main
+ 
+on:
+  push:
+    branches: [week4]
+ 
+jobs:
+  checks:
+    uses: ./.github/workflows/typecheck.yaml
+    strategy:
+      fail-fast: false
+      matrix:
+        service: [back, front]
+    with:
+      service: ${{ matrix.service }}
+
+  build:
+    needs: checks
+    uses: ./.github/workflows/build.yml
+    secrets:
+      DOCKER_USER: ${{ secrets.DOCKER_USER }}
+      DOCKER_PASS: ${{ secrets.DOCKER_PASS }}
+    strategy:
+      fail-fast: false
+      matrix:
+        service: [todo-back, todo-front]
+      include:
+        - service: todo-front
+          api_url: ${{ vars.VITE_API_URL }}
+    with:
+      image_name: ${{ matrix.service }}
+      api_url: ${{ matrix.api_url }}
+
+  deploy:
+    needs: build
+    uses: ./.github/workflows/deploy.yml
+    with:
+      deploy_dir: /myapp
+      compose_services: "back front"
+    secrets:
+      SSH_HOST: ${{ secrets.SSH_HOST }}
+      SSH_USER: ${{ secrets.SSH_USER }}
+      SSH_PRIVATE_KEY: ${{ secrets.SSH_PRIVATE_KEY }}
+
+  verify:
+    needs: deploy
+    uses: ./.github/workflows/verify.yml
+    with:
+      E2E_BASE_URL: ${{ vars.VITE_API_URL }}
+
+  notify:
+    needs: [checks, build, deploy, verify]
+    if: always()
+    uses: ./.github/workflows/notify.yml
+    with:
+      checks_result: ${{ needs.checks.result }}
+      build_result: ${{ needs.build.result }}
+      deploy_result: ${{ needs.deploy.result }}
+      verify_result: ${{ needs.verify.result }}
+    secrets: 
+      TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+      TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}

@@ -22,7 +22,7 @@ export function App() {
         <div className="min-h-screen bg-background text-foreground">
           <header className="border-b">
             <div className="container py-4">
-              <h1 className="text-xl font-semibold">Todos</h1>
+              <h1 className="text-xl font-semibold">Todos - week4</h1>
             </div>
           </header>
           <main className="container py-6">

@@ -9,6 +9,7 @@
 
 services:
   db:
+    restart: unless-stopped
     image: postgres:16-alpine
     env_file: .env.development.db
     ports:
@@ -24,7 +25,10 @@ services:
       - pgdata:/var/lib/postgresql/data
 
   back:
-    image: ${DOCKERHUB_USERNAME}/todo-back:${IMAGE_TAG}
+    restart: unless-stopped
+    image: ${DOCKERHUB_USERNAME}/todo-back:${APP_VERSION}
+    environment:
+      - APP_VERSION=${APP_VERSION}
     env_file: .env.development.back
     ports:
       - "13000:3000"
@@ -38,7 +42,8 @@ services:
         read_only: true
 
   front:
-    image: ${DOCKERHUB_USERNAME}/todo-front:${IMAGE_TAG}
+    restart: unless-stopped
+    image: ${DOCKERHUB_USERNAME}/todo-front:${APP_VERSION}
     ports:
       - "18080:80"
     depends_on:

@@ -1,0 +1,51 @@
+name: Build Template
+
+on:
+  workflow_call:
+    inputs:
+      image_name:
+        description: 'Имя Docker-образа (без юзернейма, например: my-app)'
+        required: true
+        type: string
+      api_url:
+        description: 'URL API для фронтенда'
+        required: false # Делаем необязательным
+        type: string
+        default: ""
+    secrets:
+      DOCKER_USER:
+        required: true
+      DOCKER_PASS:
+        required: true
+
+jobs:
+  build_image:
+    name: Build and Push (${{ inputs.image_name }})
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Login to Docker Hub
+        uses: docker/login-action@v3
+        with:
+          username: ${{ secrets.DOCKER_USER }}
+          password: ${{ secrets.DOCKER_PASS }}
+
+      - name: Build and push image
+        env:
+          IMAGE_BASE: ${{ secrets.DOCKER_USER }}/${{ inputs.image_name }}
+          API_URL: ${{ inputs.api_url }}
+        run: |
+          # Формируем строку с build-args, если api_url не пустой
+          BUILD_ARGS=""
+          if [ -n "$API_URL" ]; then
+            BUILD_ARGS="--build-arg VITE_API_URL=$API_URL"
+          fi
+          
+          # Собираем образ, передавая аргументы (если они есть)
+          docker build $BUILD_ARGS -t $IMAGE_BASE:sha-${{ github.sha }} -t $IMAGE_BASE:latest .
+          
+          # Пушим
+          docker push $IMAGE_BASE:sha-${{ github.sha }}
+          docker push $IMAGE_BASE:latest

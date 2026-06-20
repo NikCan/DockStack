@@ -24,9 +24,9 @@ jobs:
       fail-fast: false
       matrix:
         service: [todo-back, todo-front]
-      include:
-        - service: todo-front
-          api_url: ${{ vars.VITE_API_URL }}
+        include:
+          - service: todo-front
+            api_url: ${{ vars.VITE_API_URL }}
     with:
       image_name: ${{ matrix.service }}
       api_url: ${{ matrix.api_url }}

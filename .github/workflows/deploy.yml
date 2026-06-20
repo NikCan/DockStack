@@ -42,5 +42,5 @@ jobs:
             sed -i "s|^APP_VERSION=.*|APP_VERSION=sha-${{ github.sha }}|" .env.development.compose
 
             # Перезапускаем все переданные сервисы разом
-            # Docker Compose корректно обработает список "back front"
-            docker compose up -d --no-deps $COMPOSE_SERVICES
+            # Используем $(echo ...) для совместимости с zsh, чтобы разбить строку сервисов на отдельные аргументы
+            docker compose --env-file .env.development.compose up -d --no-deps $(echo $COMPOSE_SERVICES)

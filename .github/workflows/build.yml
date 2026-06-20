@@ -7,9 +7,13 @@ on:
         description: 'Имя Docker-образа (без юзернейма, например: my-app)'
         required: true
         type: string
+      work_dir:
+        description: 'Директория с проектом и Dockerfile (например: back или front)'
+        required: true
+        type: string
       api_url:
         description: 'URL API для фронтенда'
-        required: false # Делаем необязательным
+        required: false
         type: string
         default: ""
     secrets:
@@ -36,14 +40,18 @@ jobs:
         env:
           IMAGE_BASE: ${{ secrets.DOCKER_USER }}/${{ inputs.image_name }}
           API_URL: ${{ inputs.api_url }}
+          WORK_DIR: ${{ inputs.work_dir }}
         run: |
+          # Переходим в нужную подпапку перед сборкой
+          cd $WORK_DIR
+          
           # Формируем строку с build-args, если api_url не пустой
           BUILD_ARGS=""
           if [ -n "$API_URL" ]; then
             BUILD_ARGS="--build-arg VITE_API_URL=$API_URL"
           fi
           
-          # Собираем образ, передавая аргументы (если они есть)
+          # Собираем образ (точка в конце теперь указывает на папку back или front)
           docker build $BUILD_ARGS -t $IMAGE_BASE:sha-${{ github.sha }} -t $IMAGE_BASE:latest .
           
           # Пушим

@@ -25,11 +25,18 @@ jobs:
       matrix:
         service: [todo-back, todo-front]
         include:
+          # Для фронта указываем папку и переменную
           - service: todo-front
             api_url: ${{ vars.VITE_API_URL }}
+            work_dir: front
+            
+          # Для бэка указываем только папку
+          - service: todo-back
+            work_dir: back
     with:
       image_name: ${{ matrix.service }}
       api_url: ${{ matrix.api_url }}
+      work_dir: ${{ matrix.work_dir }} # Прокидываем переменную директории в шаблон
 
   deploy:
     needs: build

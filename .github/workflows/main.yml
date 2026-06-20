@@ -1,9 +1,9 @@
 name: Main
- 
+
 on:
   push:
     branches: [week4]
- 
+
 jobs:
   checks:
     uses: ./.github/workflows/typecheck.yaml
@@ -29,7 +29,7 @@ jobs:
           - service: todo-front
             api_url: ${{ vars.VITE_API_URL }}
             work_dir: front
-            
+
           # Для бэка указываем только папку
           - service: todo-back
             work_dir: back
@@ -42,7 +42,7 @@ jobs:
     needs: build
     uses: ./.github/workflows/deploy.yml
     with:
-      deploy_dir: /myapp
+      deploy_dir: ~/myapp
       compose_services: "back front"
     secrets:
       SSH_HOST: ${{ secrets.SSH_HOST }}
@@ -64,6 +64,6 @@ jobs:
       build_result: ${{ needs.build.result }}
       deploy_result: ${{ needs.deploy.result }}
       verify_result: ${{ needs.verify.result }}
-    secrets: 
+    secrets:
       TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
       TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}

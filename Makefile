@@ -82,3 +82,23 @@ e2e-deployed: ## Прогнать Playwright-тесты против разве�
 
 smoke-deployed: ## Read-only smoke-проверка задеплоенного стека (нужен .env.production.e2e)
 	set -a && . ./.env.production.e2e && bash scripts/smoke.sh
+
+# ---------- observability (hw5: Prometheus + Grafana + Loki + Promtail) ----------
+#
+# Observability-стек живёт в отдельном файле docker-compose.observability.yml
+# и поднимается вместе с прод-сервисами через два `-f`. Прод-сервисы
+# (db/back/front) при этом не пересоздаются — compose видит, что они уже Up.
+#
+# Запускать на VPS один раз — стек самодостаточный, CI/CD из hw4 продолжает
+# деплоить только back/front через `--no-deps` и observability не трогает.
+
+COMPOSE_FILES_OBS := -f docker-compose.yml -f docker-compose.observability.yml
+
+up-observability: ## Поднять весь стек (прод + observability)
+	docker compose $(COMPOSE_FILES_OBS) --env-file .env.development.compose up -d
+
+down-observability: ## Погасить весь стек (volumes сохраняются)
+	docker compose $(COMPOSE_FILES_OBS) --env-file .env.development.compose down
+
+down-observability-v: ## Погасить весь стек И удалить observability-volumes (сбрасывает пароль Grafana, историю метрик/логов)
+	docker compose $(COMPOSE_FILES_OBS) --env-file .env.development.compose down -v

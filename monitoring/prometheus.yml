@@ -1,0 +1,29 @@
+# Конфигурация сбора метрик для hw5.
+#
+# Prometheus работает по pull-модели: периодически опрашивает targets и
+# скачивает метрики по HTTP. Каждый таргет должен отдавать на /metrics
+# текст в формате Prometheus exposition.
+#
+# Targets указаны через service-имена docker-compose сети (`back`, `node-exporter`),
+# а не через localhost — внутри docker-сети сервисы видят друг друга по именам.
+
+global:
+  scrape_interval: 15s
+  evaluation_interval: 15s
+
+scrape_configs:
+  # Сам Prometheus тоже отдаёт метрики на /metrics.
+  - job_name: 'prometheus'
+    static_configs:
+      - targets: ['localhost:9090']
+
+  # Системные метрики хоста: CPU, RAM, диск, сеть.
+  - job_name: 'node-exporter'
+    static_configs:
+      - targets: ['node-exporter:9100']
+
+  # Метрики NestJS-приложения: default Node.js + кастомный HTTP-гистограмма.
+  # Порт 3000 — внутренний порт контейнера back в docker-сети.
+  - job_name: 'back'
+    static_configs:
+      - targets: ['back:3000']

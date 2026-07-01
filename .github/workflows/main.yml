@@ -2,7 +2,7 @@ name: Main
 
 on:
   push:
-    branches: [week4]
+    branches: [week5]
 
 jobs:
   checks:

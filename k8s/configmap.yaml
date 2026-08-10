@@ -8,7 +8,7 @@ data:
   NODE_ENV: "production"
   PORT: "3000"
   # DB_HOST — это имя Service Postgres в кластере. DNS кластера резолвит его в Pod.
-  DB_HOST: "postgres"
+  DB_HOST: "postgres-lesson"
   DB_PORT: "5432"
   DB_NAME: "todo"
   # Фронт и API живут на одном origin (https://<домен> и https://<домен>/api),

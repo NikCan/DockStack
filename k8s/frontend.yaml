@@ -21,7 +21,7 @@ spec:
         - name: dockerhub-cred
       containers:
         - name: frontend
-          image: ВАШ_ЛОГИН/todo-front:latest
+          image: nikitagaponov/todo-front:latest
           ports:
             - containerPort: 80
           resources:

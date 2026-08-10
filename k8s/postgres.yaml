@@ -3,20 +3,20 @@
 apiVersion: apps/v1
 kind: StatefulSet
 metadata:
-  name: postgres
+  name: postgres-lesson
 spec:
-  serviceName: postgres        # ссылка на Headless Service ниже — даёт стабильный DNS
+  serviceName: postgres-lesson        # ссылка на Headless Service ниже — даёт стабильный DNS
   replicas: 1
   selector:
     matchLabels:
-      app: postgres
+      app: postgres-lesson
   template:
     metadata:
       labels:
-        app: postgres
+        app: postgres-lesson
     spec:
       containers:
-        - name: postgres
+        - name: postgres-lesson
           image: postgres:16-alpine
           ports:
             - containerPort: 5432
@@ -81,10 +81,10 @@ spec:
 apiVersion: v1
 kind: Service
 metadata:
-  name: postgres
+  name: postgres-lesson
 spec:
   selector:
-    app: postgres
+    app: postgres-lesson
   ports:
     - port: 5432
       targetPort: 5432

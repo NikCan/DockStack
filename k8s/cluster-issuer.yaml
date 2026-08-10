@@ -1,0 +1,18 @@
+# ClusterIssuer — источник TLS-сертификатов для всего кластера через Let's Encrypt.
+# cert-manager видит аннотацию cert-manager.io/cluster-issuer на Ingress, делает
+# ACME HTTP-01 challenge и кладёт выданный сертификат в Secret app-tls.
+# Замени ВАШ_EMAIL — на него Let's Encrypt шлёт уведомления об истечении.
+apiVersion: cert-manager.io/v1
+kind: ClusterIssuer
+metadata:
+  name: letsencrypt-prod
+spec:
+  acme:
+    server: https://acme-v02.api.letsencrypt.org/directory
+    email: ВАШ_EMAIL
+    privateKeySecretRef:
+      name: letsencrypt-prod-key
+    solvers:
+      - http01:
+          ingress:
+            ingressClassName: nginx

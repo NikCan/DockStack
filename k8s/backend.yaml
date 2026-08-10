@@ -1,0 +1,97 @@
+# Backend (NestJS) — stateless, поэтому Deployment (в отличие от базы).
+#
+# ВАЖНО: image и APP_VERSION — плейсхолдеры ${IMAGE}/${APP_VERSION}. Применять
+# файл напрямую нельзя — Pod уйдёт в ImagePullBackOff на литеральной строке "${IMAGE}".
+# Деплой только через envsubst, который подставит переменные окружения:
+#   export IMAGE=ВАШ_ЛОГИН/todo-back:latest APP_VERSION=manual
+#   envsubst < k8s/backend.yaml | kubectl apply -f -
+# В CI те же переменные приходят из шага build (конкретный sha-тег) — см. deploy-k8s.yml.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: backend
+  labels:
+    app: backend
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: backend
+  template:
+    metadata:
+      labels:
+        app: backend
+    spec:
+      imagePullSecrets:
+        - name: dockerhub-cred
+      containers:
+        - name: backend
+          image: ${IMAGE}
+          ports:
+            - containerPort: 3000
+          envFrom:
+            - configMapRef:
+                name: backend-config
+            - secretRef:
+                name: backend-secret
+          env:
+            # APP_VERSION отдаётся на /health — smoke-проверка и AI-агент сверяют
+            # его с sha текущего коммита (тот же контракт, что в hw4/hw5).
+            - name: APP_VERSION
+              value: "${APP_VERSION}"
+          resources:
+            requests:
+              cpu: "100m"      # HPA (soft) считает загрузку относительно request
+              memory: "128Mi"
+            limits:
+              cpu: "300m"
+              memory: "256Mi"
+          # startupProbe даёт приложению время подняться и подключиться к БД,
+          # прежде чем включатся liveness/readiness (до 60с: 20 × 3с).
+          startupProbe:
+            httpGet:
+              path: /health
+              port: 3000
+            failureThreshold: 20
+            periodSeconds: 3
+          # liveness — «процесс жив». Провал → перезапуск контейнера. Без похода в БД.
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: 3000
+            periodSeconds: 15
+            failureThreshold: 3
+          # readiness — «готов принять трафик». /ready проверяет доступность БД.
+          # Провал → Pod убирается из endpoints Service (трафик не идёт), без рестарта.
+          readinessProbe:
+            httpGet:
+              path: /ready
+              port: 3000
+            periodSeconds: 10
+            failureThreshold: 3
+          # Runtime-конфиг (maxTodos) — backend читает /app/config/app.json при
+          # создании todo. Монтируем ConfigMap backend-appconfig как файл, read-only
+          # (в docker-compose это был bind-mount app-config/ → /app/config:ro).
+          volumeMounts:
+            - name: app-config
+              mountPath: /app/config
+              readOnly: true
+      volumes:
+        - name: app-config
+          configMap:
+            name: backend-appconfig
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: backend
+  labels:
+    app: backend
+spec:
+  selector:
+    app: backend
+  ports:
+    - name: http          # именованный порт нужен ServiceMonitor (см. k8s/optional/)
+      port: 80
+      targetPort: 3000
+  type: ClusterIP

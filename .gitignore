@@ -12,3 +12,10 @@ test-results
 .env.*.local
 
 settings.json
+
+# hw6: реальные Kubernetes-секреты и kubeconfig не коммитим.
+# В git лежат только *.example.yaml-шаблоны из k8s/.
+k8s/secret.yaml
+k8s/dockerhub-secret.yaml
+kubeconfig
+*.kubeconfig

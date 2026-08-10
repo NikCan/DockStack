@@ -1,0 +1,610 @@
+diff --git a/.gitignore b/.gitignore
+index aaffabc..a0a51df 100644
+--- a/.gitignore
++++ b/.gitignore
+@@ -10,3 +10,10 @@ test-results
+ .env.local
+ .env.production
+ .env.*.local
++
++# hw6: реальные Kubernetes-секреты и kubeconfig не коммитим.
++# В git лежат только *.example.yaml-шаблоны из k8s/.
++k8s/secret.yaml
++k8s/dockerhub-secret.yaml
++kubeconfig
++*.kubeconfig
+diff --git a/back/src/app.module.ts b/back/src/app.module.ts
+index 38e9331..9cee794 100644
+--- a/back/src/app.module.ts
++++ b/back/src/app.module.ts
+@@ -5,6 +5,7 @@ import { TodosModule } from './todos/todos.module';
+ import { Todo } from './todos/todo.entity';
+ import { TestResetModule } from './test-reset/test-reset.module';
+ import { HealthModule } from './health/health.module';
++import { ReadinessModule } from './readiness/readiness.module';
+ import { MetricsModule } from './metrics/metrics.module';
+ import { MetricsMiddleware } from './metrics/metrics.middleware';
+ 
+@@ -27,16 +28,18 @@ import { MetricsMiddleware } from './metrics/metrics.middleware';
+     TodosModule,
+     TestResetModule,
+     HealthModule,
++    ReadinessModule,
+     MetricsModule,
+   ],
+ })
+ export class AppModule implements NestModule {
+   configure(consumer: MiddlewareConsumer): void {
+-    // Меряем все маршруты, кроме /metrics (self-probe) и /health
+-    // (служебный эндпоинт smoke-проверки и AI-агента — не пользовательский трафик).
++    // Меряем все маршруты, кроме служебных: /metrics (self-probe),
++    // /health (liveness) и /ready (readiness) — это не пользовательский трафик,
++    // и Kubernetes-пробы дёргают их часто, засоряя гистограмму времени ответа.
+     consumer
+       .apply(MetricsMiddleware)
+-      .exclude('metrics', 'health')
++      .exclude('metrics', 'health', 'ready')
+       .forRoutes('*');
+   }
+ }
+diff --git a/back/src/readiness/readiness.controller.ts b/back/src/readiness/readiness.controller.ts
+new file mode 100644
+index 0000000..7c509eb
+--- /dev/null
++++ b/back/src/readiness/readiness.controller.ts
+@@ -0,0 +1,39 @@
++import {
++  Controller,
++  Get,
++  ServiceUnavailableException,
++} from '@nestjs/common';
++import { ApiExcludeController } from '@nestjs/swagger';
++import { InjectDataSource } from '@nestjs/typeorm';
++import { DataSource } from 'typeorm';
++
++// Readiness-эндпоинт для Kubernetes readinessProbe (hw6).
++//
++// Разница с /health:
++//   /health  (livenessProbe)  — «процесс жив?». Лёгкая проверка без похода в БД.
++//                               Провал → Kubernetes ПЕРЕЗАПУСКАЕТ контейнер.
++//   /ready   (readinessProbe) — «готов принять трафик?». Проверяет зависимость —
++//                               доступна ли БД. Провал → Kubernetes убирает Pod из
++//                               endpoints Service (трафик не идёт), но НЕ перезапускает.
++//
++// Такое разделение нужно, чтобы недоступность БД не вызывала каскадный рестарт
++// всех Pod-ов (перезапуск бэкенда БД не чинит), а лишь временно выводил Pod
++// из ротации до восстановления соединения.
++@ApiExcludeController()
++@Controller('ready')
++export class ReadinessController {
++  constructor(
++    @InjectDataSource() private readonly dataSource: DataSource,
++  ) {}
++
++  @Get()
++  async getReady(): Promise<{ status: 'ready' }> {
++    try {
++      await this.dataSource.query('SELECT 1');
++    } catch {
++      // 503 → Pod исключается из endpoints Service до восстановления БД.
++      throw new ServiceUnavailableException({ status: 'not-ready' });
++    }
++    return { status: 'ready' };
++  }
++}
+diff --git a/back/src/readiness/readiness.module.ts b/back/src/readiness/readiness.module.ts
+new file mode 100644
+index 0000000..5a2b76f
+--- /dev/null
++++ b/back/src/readiness/readiness.module.ts
+@@ -0,0 +1,7 @@
++import { Module } from '@nestjs/common';
++import { ReadinessController } from './readiness.controller';
++
++@Module({
++  controllers: [ReadinessController],
++})
++export class ReadinessModule {}
+diff --git a/k8s/app-config.yaml b/k8s/app-config.yaml
+new file mode 100644
+index 0000000..56dc250
+--- /dev/null
++++ b/k8s/app-config.yaml
+@@ -0,0 +1,17 @@
++# Runtime-конфиг приложения (лимит maxTodos). Backend читает его в рантайме из
++# /app/config/app.json при создании todo. В docker-compose (hw2) он монтировался
++# read-only из папки app-config/; в Kubernetes ту же роль играет этот ConfigMap,
++# смонтированный как файл в backend-е (см. volumeMounts в k8s/backend.yaml).
++#
++# Хочешь другой лимит — поменяй maxTodos здесь и переприменяй ConfigMap
++# (kubectl apply -f k8s/app-config.yaml), затем перезапусти backend
++# (kubectl rollout restart deployment/backend), чтобы подхватить новый файл.
++apiVersion: v1
++kind: ConfigMap
++metadata:
++  name: backend-appconfig
++data:
++  app.json: |
++    {
++      "maxTodos": 5
++    }
+diff --git a/k8s/backend.yaml b/k8s/backend.yaml
+new file mode 100644
+index 0000000..c95e3be
+--- /dev/null
++++ b/k8s/backend.yaml
+@@ -0,0 +1,97 @@
++# Backend (NestJS) — stateless, поэтому Deployment (в отличие от базы).
++#
++# ВАЖНО: image и APP_VERSION — плейсхолдеры ${IMAGE}/${APP_VERSION}. Применять
++# файл напрямую нельзя — Pod уйдёт в ImagePullBackOff на литеральной строке "${IMAGE}".
++# Деплой только через envsubst, который подставит переменные окружения:
++#   export IMAGE=ВАШ_ЛОГИН/todo-back:latest APP_VERSION=manual
++#   envsubst < k8s/backend.yaml | kubectl apply -f -
++# В CI те же переменные приходят из шага build (конкретный sha-тег) — см. deploy-k8s.yml.
++apiVersion: apps/v1
++kind: Deployment
++metadata:
++  name: backend
++  labels:
++    app: backend
++spec:
++  replicas: 2
++  selector:
++    matchLabels:
++      app: backend
++  template:
++    metadata:
++      labels:
++        app: backend
++    spec:
++      imagePullSecrets:
++        - name: dockerhub-cred
++      containers:
++        - name: backend
++          image: ${IMAGE}
++          ports:
++            - containerPort: 3000
++          envFrom:
++            - configMapRef:
++                name: backend-config
++            - secretRef:
++                name: backend-secret
++          env:
++            # APP_VERSION отдаётся на /health — smoke-проверка и AI-агент сверяют
++            # его с sha текущего коммита (тот же контракт, что в hw4/hw5).
++            - name: APP_VERSION
++              value: "${APP_VERSION}"
++          resources:
++            requests:
++              cpu: "100m"      # HPA (soft) считает загрузку относительно request
++              memory: "128Mi"
++            limits:
++              cpu: "300m"
++              memory: "256Mi"
++          # startupProbe даёт приложению время подняться и подключиться к БД,
++          # прежде чем включатся liveness/readiness (до 60с: 20 × 3с).
++          startupProbe:
++            httpGet:
++              path: /health
++              port: 3000
++            failureThreshold: 20
++            periodSeconds: 3
++          # liveness — «процесс жив». Провал → перезапуск контейнера. Без похода в БД.
++          livenessProbe:
++            httpGet:
++              path: /health
++              port: 3000
++            periodSeconds: 15
++            failureThreshold: 3
++          # readiness — «готов принять трафик». /ready проверяет доступность БД.
++          # Провал → Pod убирается из endpoints Service (трафик не идёт), без рестарта.
++          readinessProbe:
++            httpGet:
++              path: /ready
++              port: 3000
++            periodSeconds: 10
++            failureThreshold: 3
++          # Runtime-конфиг (maxTodos) — backend читает /app/config/app.json при
++          # создании todo. Монтируем ConfigMap backend-appconfig как файл, read-only
++          # (в docker-compose это был bind-mount app-config/ → /app/config:ro).
++          volumeMounts:
++            - name: app-config
++              mountPath: /app/config
++              readOnly: true
++      volumes:
++        - name: app-config
++          configMap:
++            name: backend-appconfig
++---
++apiVersion: v1
++kind: Service
++metadata:
++  name: backend
++  labels:
++    app: backend
++spec:
++  selector:
++    app: backend
++  ports:
++    - name: http          # именованный порт нужен ServiceMonitor (см. k8s/optional/)
++      port: 80
++      targetPort: 3000
++  type: ClusterIP
+diff --git a/k8s/cluster-issuer.yaml b/k8s/cluster-issuer.yaml
+new file mode 100644
+index 0000000..cbfc480
+--- /dev/null
++++ b/k8s/cluster-issuer.yaml
+@@ -0,0 +1,18 @@
++# ClusterIssuer — источник TLS-сертификатов для всего кластера через Let's Encrypt.
++# cert-manager видит аннотацию cert-manager.io/cluster-issuer на Ingress, делает
++# ACME HTTP-01 challenge и кладёт выданный сертификат в Secret app-tls.
++# Замени ВАШ_EMAIL — на него Let's Encrypt шлёт уведомления об истечении.
++apiVersion: cert-manager.io/v1
++kind: ClusterIssuer
++metadata:
++  name: letsencrypt-prod
++spec:
++  acme:
++    server: https://acme-v02.api.letsencrypt.org/directory
++    email: ВАШ_EMAIL
++    privateKeySecretRef:
++      name: letsencrypt-prod-key
++    solvers:
++      - http01:
++          ingress:
++            ingressClassName: nginx
+diff --git a/k8s/configmap.yaml b/k8s/configmap.yaml
+new file mode 100644
+index 0000000..fa51c00
+--- /dev/null
++++ b/k8s/configmap.yaml
+@@ -0,0 +1,16 @@
++# Несекретная конфигурация backend. Можно и нужно коммитить в git — паролей тут нет.
++# Postgres берёт имя базы (DB_NAME) отсюда; логин/пароль — из Secret (см. secret.example.yaml).
++apiVersion: v1
++kind: ConfigMap
++metadata:
++  name: backend-config
++data:
++  NODE_ENV: "production"
++  PORT: "3000"
++  # DB_HOST — это имя Service Postgres в кластере. DNS кластера резолвит его в Pod.
++  DB_HOST: "postgres"
++  DB_PORT: "5432"
++  DB_NAME: "todo"
++  # Фронт и API живут на одном origin (https://<домен> и https://<домен>/api),
++  # поэтому CORS фактически не нужен. Приложение читает переменную — оставляем пустой.
++  CORS_ORIGIN: ""
+diff --git a/k8s/dockerhub-secret.example.yaml b/k8s/dockerhub-secret.example.yaml
+new file mode 100644
+index 0000000..8b02a57
+--- /dev/null
++++ b/k8s/dockerhub-secret.example.yaml
+@@ -0,0 +1,19 @@
++# ШАБЛОН для доступа к приватному образу на Docker Hub. НЕ коммить реальный токен.
++#   cp k8s/dockerhub-secret.example.yaml k8s/dockerhub-secret.yaml   # уже в .gitignore
++# Токен: Docker Hub → Account Settings → Security → New Access Token → права Read-only.
++# Токены Docker Hub начинаются с dckr_pat_ — это не пароль от аккаунта.
++apiVersion: v1
++kind: Secret
++metadata:
++  name: dockerhub-cred
++type: kubernetes.io/dockerconfigjson
++stringData:
++  .dockerconfigjson: |
++    {
++      "auths": {
++        "https://index.docker.io/v1/": {
++          "username": "ВАШ_ЛОГИН",
++          "password": "dckr_pat_ВАШ_ТОКЕН"
++        }
++      }
++    }
+diff --git a/k8s/frontend.yaml b/k8s/frontend.yaml
+new file mode 100644
+index 0000000..d0ea498
+--- /dev/null
++++ b/k8s/frontend.yaml
+@@ -0,0 +1,55 @@
++# Frontend (nginx со статикой React). Образ собран с зашитым VITE_API_URL=
++# https://<домен>/api ещё в hw2/hw3 — тот же образ переиспользуется как есть.
++# Замени ВАШ_ЛОГИН на свой Docker Hub логин.
++apiVersion: apps/v1
++kind: Deployment
++metadata:
++  name: frontend
++  labels:
++    app: frontend
++spec:
++  replicas: 2
++  selector:
++    matchLabels:
++      app: frontend
++  template:
++    metadata:
++      labels:
++        app: frontend
++    spec:
++      imagePullSecrets:
++        - name: dockerhub-cred
++      containers:
++        - name: frontend
++          image: ВАШ_ЛОГИН/todo-front:latest
++          ports:
++            - containerPort: 80
++          resources:
++            requests:
++              cpu: "50m"
++              memory: "32Mi"
++            limits:
++              cpu: "100m"
++              memory: "64Mi"
++          readinessProbe:
++            httpGet:
++              path: /
++              port: 80
++            periodSeconds: 10
++          livenessProbe:
++            httpGet:
++              path: /
++              port: 80
++            periodSeconds: 20
++---
++apiVersion: v1
++kind: Service
++metadata:
++  name: frontend
++spec:
++  selector:
++    app: frontend
++  ports:
++    - port: 80
++      targetPort: 80
++  type: ClusterIP
+diff --git a/k8s/ingress.yaml b/k8s/ingress.yaml
+new file mode 100644
+index 0000000..1363093
+--- /dev/null
++++ b/k8s/ingress.yaml
+@@ -0,0 +1,44 @@
++# Единая точка входа: ingress-nginx принимает 80/443, маршрутизирует по пути.
++# Замени ВАШ_ДОМЕН на свой домен (тот же, что был в hw3).
++#
++#   /      → frontend (React-статика)
++#   /api   → backend  (NestJS)
++#
++# Тонкость: у backend НЕТ префикса /api (роуты живут в корне: /todos, /health,
++# /ready, /metrics, /test/reset). Поэтому /api надо СРЕЗАТЬ перед проксированием —
++# это делает аннотация rewrite-target вместе с regex-группами в path:
++#   path /api(/|$)(.*)  → группа $2 = всё после /api  → rewrite-target /$2
++#   /api/todos → /todos,  /api/health → /health,  /api → /
++# Для фронта путь /()(.*) даёт $2 = весь путь → /$2 = тот же путь (identity).
++apiVersion: networking.k8s.io/v1
++kind: Ingress
++metadata:
++  name: app-ingress
++  annotations:
++    nginx.ingress.kubernetes.io/rewrite-target: /$2
++    nginx.ingress.kubernetes.io/proxy-body-size: "10m"
++    cert-manager.io/cluster-issuer: letsencrypt-prod
++spec:
++  ingressClassName: nginx
++  tls:
++    - hosts:
++        - ВАШ_ДОМЕН
++      secretName: app-tls           # сюда cert-manager положит сертификат Let's Encrypt
++  rules:
++    - host: ВАШ_ДОМЕН
++      http:
++        paths:
++          - path: /api(/|$)(.*)
++            pathType: ImplementationSpecific
++            backend:
++              service:
++                name: backend
++                port:
++                  number: 80
++          - path: /()(.*)
++            pathType: ImplementationSpecific
++            backend:
++              service:
++                name: frontend
++                port:
++                  number: 80
+diff --git a/k8s/optional/README.md b/k8s/optional/README.md
+new file mode 100644
+index 0000000..ffd249f
+--- /dev/null
++++ b/k8s/optional/README.md
+@@ -0,0 +1,13 @@
++# k8s/optional — необязательные манифесты (soft, вне обязательного DoD)
++
++Эти манифесты **не** применяются командой `kubectl apply -f k8s/` (она нерекурсивна и
++в подпапки не заходит). Применяй их вручную и только после установки нужных
++зависимостей — иначе `kubectl apply` упадёт на отсутствующих CRD/компонентах.
++
++| Файл | Зависимость | Урок |
++|---|---|---|
++| `backend-hpa.yaml` | Metrics Server (`kubectl top pods` работает) | HPA |
++| `backend-servicemonitor.yaml` | CRD `ServiceMonitor` из `kube-prometheus-stack` | Мониторинг |
++
++Порядок и подробности — в self-study по мониторингу и автоскейлингу
++(`full-course/hometasks/06/03-k8s-monitoring-scaling-self-study.mdx`).
+diff --git a/k8s/optional/backend-hpa.yaml b/k8s/optional/backend-hpa.yaml
+new file mode 100644
+index 0000000..cde0d6e
+--- /dev/null
++++ b/k8s/optional/backend-hpa.yaml
+@@ -0,0 +1,24 @@
++# SOFT (не входит в обязательный DoD). Требует установленного Metrics Server
++# (ставится вместе с kube-prometheus-stack — см. self-study по мониторингу).
++# Лежит в optional/, чтобы `kubectl apply -f k8s/` (нерекурсивный) его не подхватывал.
++#
++# HPA считает загрузку ОТНОСИТЕЛЬНО resources.requests в backend.yaml — без requests
++# работать не будет. При росте CPU выше target добавляет реплики, при спаде — убирает.
++apiVersion: autoscaling/v2
++kind: HorizontalPodAutoscaler
++metadata:
++  name: backend-hpa
++spec:
++  scaleTargetRef:
++    apiVersion: apps/v1
++    kind: Deployment
++    name: backend
++  minReplicas: 2
++  maxReplicas: 6
++  metrics:
++    - type: Resource
++      resource:
++        name: cpu
++        target:
++          type: Utilization
++          averageUtilization: 70
+diff --git a/k8s/optional/backend-servicemonitor.yaml b/k8s/optional/backend-servicemonitor.yaml
+new file mode 100644
+index 0000000..f53506e
+--- /dev/null
++++ b/k8s/optional/backend-servicemonitor.yaml
+@@ -0,0 +1,22 @@
++# SOFT (не входит в обязательный DoD). Требует CRD ServiceMonitor из
++# kube-prometheus-stack — без него `kubectl apply` упадёт "no matches for kind
++# ServiceMonitor". Поэтому файл в optional/, а не в основном k8s/.
++#
++# ServiceMonitor — kubernetes-нативная замена статического prometheus.yml: говорит
++# Prometheus-operator'у собирать метрики с Service backend по порту http, путь /metrics.
++apiVersion: monitoring.coreos.com/v1
++kind: ServiceMonitor
++metadata:
++  name: backend-monitor
++  labels:
++    # Должен совпадать с именем Helm-release kube-prometheus-stack — по этому лейблу
++    # operator находит «свои» ServiceMonitor-ы. Иначе таргет не появится.
++    release: kube-prometheus-stack
++spec:
++  selector:
++    matchLabels:
++      app: backend
++  endpoints:
++    - port: http
++      path: /metrics
++      interval: 15s
+diff --git a/k8s/postgres.yaml b/k8s/postgres.yaml
+new file mode 100644
+index 0000000..02c609b
+--- /dev/null
++++ b/k8s/postgres.yaml
+@@ -0,0 +1,91 @@
++# Postgres как StatefulSet — stateful-нагрузке нужны стабильное имя (postgres-0)
++# и собственный том, переживающий пересоздание Pod-а.
++apiVersion: apps/v1
++kind: StatefulSet
++metadata:
++  name: postgres
++spec:
++  serviceName: postgres        # ссылка на Headless Service ниже — даёт стабильный DNS
++  replicas: 1
++  selector:
++    matchLabels:
++      app: postgres
++  template:
++    metadata:
++      labels:
++        app: postgres
++    spec:
++      containers:
++        - name: postgres
++          image: postgres:16-alpine
++          ports:
++            - containerPort: 5432
++          env:
++            - name: POSTGRES_DB
++              valueFrom:
++                configMapKeyRef:
++                  name: backend-config
++                  key: DB_NAME
++            - name: POSTGRES_USER
++              valueFrom:
++                secretKeyRef:
++                  name: backend-secret
++                  key: DB_USER
++            - name: POSTGRES_PASSWORD
++              valueFrom:
++                secretKeyRef:
++                  name: backend-secret
++                  key: DB_PASSWORD
++            # Postgres требует чистую директорию при init; том может содержать
++            # служебные файлы (lost+found) — уводим данные в подпапку pgdata.
++            - name: PGDATA
++              value: /var/lib/postgresql/data/pgdata
++          volumeMounts:
++            - name: data
++              mountPath: /var/lib/postgresql/data
++          resources:
++            requests:
++              cpu: "100m"
++              memory: "128Mi"
++            limits:
++              cpu: "250m"
++              memory: "256Mi"
++          # readiness через pg_isready — Pod готов, только когда БД принимает подключения.
++          readinessProbe:
++            exec:
++              command:
++                - sh
++                - -c
++                - pg_isready -U "$POSTGRES_USER" -d "$POSTGRES_DB"
++            initialDelaySeconds: 5
++            periodSeconds: 10
++          # liveness — простая проверка, что порт 5432 слушается.
++          livenessProbe:
++            tcpSocket:
++              port: 5432
++            initialDelaySeconds: 15
++            periodSeconds: 20
++  # volumeClaimTemplates — StatefulSet сам создаст PVC data-postgres-0 (StorageClass
++  # local-path в k3s выдаст под него PV как директорию на ноде). Отдельный PVC-файл не нужен.
++  volumeClaimTemplates:
++    - metadata:
++        name: data
++      spec:
++        accessModes: ["ReadWriteOnce"]
++        resources:
++          requests:
++            storage: 1Gi
++---
++# Headless Service (clusterIP: None) — обязателен для StatefulSet: даёт Pod-у
++# стабильное DNS-имя. Backend обращается к базе просто по имени `postgres`.
++apiVersion: v1
++kind: Service
++metadata:
++  name: postgres
++spec:
++  selector:
++    app: postgres
++  ports:
++    - port: 5432
++      targetPort: 5432
++  clusterIP: None
+diff --git a/k8s/secret.example.yaml b/k8s/secret.example.yaml
+new file mode 100644
+index 0000000..a99f0e1
+--- /dev/null
++++ b/k8s/secret.example.yaml
+@@ -0,0 +1,15 @@
++# ШАБЛОН. НЕ коммить реальные значения.
++#   cp k8s/secret.example.yaml k8s/secret.yaml   # secret.yaml уже в .gitignore
++# и подставь свои значения, затем: kubectl apply -f k8s/secret.yaml
++#
++# Один Secret питает и Postgres (POSTGRES_USER/POSTGRES_PASSWORD), и backend
++# (DB_USER/DB_PASSWORD) — значения берутся из ОДНИХ ключей, поэтому логин/пароль
++# базы и клиента всегда совпадают by design.
++apiVersion: v1
++kind: Secret
++metadata:
++  name: backend-secret
++type: Opaque
++stringData:
++  DB_USER: "todo"
++  DB_PASSWORD: "CHANGE_ME_сильный_пароль"

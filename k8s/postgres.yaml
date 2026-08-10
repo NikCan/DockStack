@@ -1,0 +1,91 @@
+# Postgres как StatefulSet — stateful-нагрузке нужны стабильное имя (postgres-0)
+# и собственный том, переживающий пересоздание Pod-а.
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: postgres
+spec:
+  serviceName: postgres        # ссылка на Headless Service ниже — даёт стабильный DNS
+  replicas: 1
+  selector:
+    matchLabels:
+      app: postgres
+  template:
+    metadata:
+      labels:
+        app: postgres
+    spec:
+      containers:
+        - name: postgres
+          image: postgres:16-alpine
+          ports:
+            - containerPort: 5432
+          env:
+            - name: POSTGRES_DB
+              valueFrom:
+                configMapKeyRef:
+                  name: backend-config
+                  key: DB_NAME
+            - name: POSTGRES_USER
+              valueFrom:
+                secretKeyRef:
+                  name: backend-secret
+                  key: DB_USER
+            - name: POSTGRES_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: backend-secret
+                  key: DB_PASSWORD
+            # Postgres требует чистую директорию при init; том может содержать
+            # служебные файлы (lost+found) — уводим данные в подпапку pgdata.
+            - name: PGDATA
+              value: /var/lib/postgresql/data/pgdata
+          volumeMounts:
+            - name: data
+              mountPath: /var/lib/postgresql/data
+          resources:
+            requests:
+              cpu: "100m"
+              memory: "128Mi"
+            limits:
+              cpu: "250m"
+              memory: "256Mi"
+          # readiness через pg_isready — Pod готов, только когда БД принимает подключения.
+          readinessProbe:
+            exec:
+              command:
+                - sh
+                - -c
+                - pg_isready -U "$POSTGRES_USER" -d "$POSTGRES_DB"
+            initialDelaySeconds: 5
+            periodSeconds: 10
+          # liveness — простая проверка, что порт 5432 слушается.
+          livenessProbe:
+            tcpSocket:
+              port: 5432
+            initialDelaySeconds: 15
+            periodSeconds: 20
+  # volumeClaimTemplates — StatefulSet сам создаст PVC data-postgres-0 (StorageClass
+  # local-path в k3s выдаст под него PV как директорию на ноде). Отдельный PVC-файл не нужен.
+  volumeClaimTemplates:
+    - metadata:
+        name: data
+      spec:
+        accessModes: ["ReadWriteOnce"]
+        resources:
+          requests:
+            storage: 1Gi
+---
+# Headless Service (clusterIP: None) — обязателен для StatefulSet: даёт Pod-у
+# стабильное DNS-имя. Backend обращается к базе просто по имени `postgres`.
+apiVersion: v1
+kind: Service
+metadata:
+  name: postgres
+spec:
+  selector:
+    app: postgres
+  ports:
+    - port: 5432
+      targetPort: 5432
+  clusterIP: None

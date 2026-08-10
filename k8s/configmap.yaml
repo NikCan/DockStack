@@ -1,0 +1,16 @@
+# Несекретная конфигурация backend. Можно и нужно коммитить в git — паролей тут нет.
+# Postgres берёт имя базы (DB_NAME) отсюда; логин/пароль — из Secret (см. secret.example.yaml).
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: backend-config
+data:
+  NODE_ENV: "production"
+  PORT: "3000"
+  # DB_HOST — это имя Service Postgres в кластере. DNS кластера резолвит его в Pod.
+  DB_HOST: "postgres"
+  DB_PORT: "5432"
+  DB_NAME: "todo"
+  # Фронт и API живут на одном origin (https://<домен> и https://<домен>/api),
+  # поэтому CORS фактически не нужен. Приложение читает переменную — оставляем пустой.
+  CORS_ORIGIN: ""

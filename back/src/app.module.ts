@@ -5,6 +5,7 @@ import { TodosModule } from './todos/todos.module';
 import { Todo } from './todos/todo.entity';
 import { TestResetModule } from './test-reset/test-reset.module';
 import { HealthModule } from './health/health.module';
+import { ReadinessModule } from './readiness/readiness.module';
 import { MetricsModule } from './metrics/metrics.module';
 import { MetricsMiddleware } from './metrics/metrics.middleware';
 
@@ -27,16 +28,18 @@ import { MetricsMiddleware } from './metrics/metrics.middleware';
     TodosModule,
     TestResetModule,
     HealthModule,
+    ReadinessModule,
     MetricsModule,
   ],
 })
 export class AppModule implements NestModule {
   configure(consumer: MiddlewareConsumer): void {
-    // Меряем все маршруты, кроме /metrics (self-probe) и /health
-    // (служебный эндпоинт smoke-проверки и AI-агента — не пользовательский трафик).
+    // Меряем все маршруты, кроме служебных: /metrics (self-probe),
+    // /health (liveness) и /ready (readiness) — это не пользовательский трафик,
+    // и Kubernetes-пробы дёргают их часто, засоряя гистограмму времени ответа.
     consumer
       .apply(MetricsMiddleware)
-      .exclude('metrics', 'health')
+      .exclude('metrics', 'health', 'ready')
       .forRoutes('*');
   }
 }

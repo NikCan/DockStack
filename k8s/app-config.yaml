@@ -1,0 +1,17 @@
+# Runtime-конфиг приложения (лимит maxTodos). Backend читает его в рантайме из
+# /app/config/app.json при создании todo. В docker-compose (hw2) он монтировался
+# read-only из папки app-config/; в Kubernetes ту же роль играет этот ConfigMap,
+# смонтированный как файл в backend-е (см. volumeMounts в k8s/backend.yaml).
+#
+# Хочешь другой лимит — поменяй maxTodos здесь и переприменяй ConfigMap
+# (kubectl apply -f k8s/app-config.yaml), затем перезапусти backend
+# (kubectl rollout restart deployment/backend), чтобы подхватить новый файл.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: backend-appconfig
+data:
+  app.json: |
+    {
+      "maxTodos": 5
+    }

@@ -1,0 +1,24 @@
+# SOFT (не входит в обязательный DoD). Требует установленного Metrics Server
+# (ставится вместе с kube-prometheus-stack — см. self-study по мониторингу).
+# Лежит в optional/, чтобы `kubectl apply -f k8s/` (нерекурсивный) его не подхватывал.
+#
+# HPA считает загрузку ОТНОСИТЕЛЬНО resources.requests в backend.yaml — без requests
+# работать не будет. При росте CPU выше target добавляет реплики, при спаде — убирает.
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: backend-hpa
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: backend
+  minReplicas: 2
+  maxReplicas: 6
+  metrics:
+    - type: Resource
+      resource:
+        name: cpu
+        target:
+          type: Utilization
+          averageUtilization: 70

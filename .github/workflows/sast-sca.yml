@@ -1,0 +1,24 @@
+name: SAST / SCA scan
+on: workflow_call
+jobs:
+  gitleaks:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: |
+          curl -sSL https://github.com/gitleaks/gitleaks/releases/download/v8.30.0/gitleaks_8.30.0_linux_x64.tar.gz -o g.tar.gz
+          tar -zxf g.tar.gz && chmod +x gitleaks
+          ./gitleaks git . --config=.gitleaks.toml --redact --no-banner --exit-code 1
+  semgrep:
+    runs-on: ubuntu-latest
+    container: { image: semgrep/semgrep }
+    steps:
+      - uses: actions/checkout@v4
+      - run: semgrep scan --config=p/typescript --config=p/nodejs --config=p/owasp-top-ten --error --exclude=node_modules --exclude=dist .
+  trivy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: |
+          curl -sL https://github.com/aquasecurity/trivy/releases/download/v0.69.2/trivy_0.69.2_Linux-64bit.tar.gz | tar -xz trivy
+          ./trivy fs --scanners vuln --severity CRITICAL,HIGH --ignore-unfixed --exit-code 1 .

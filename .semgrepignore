@@ -1,0 +1,6 @@
+# Ignored directories and files for Semgrep SAST scan
+node_modules/
+dist/
+test-results/
+.git/
+.github/

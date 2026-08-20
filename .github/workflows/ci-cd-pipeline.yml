@@ -17,8 +17,11 @@ jobs:
     with:
       service: ${{ matrix.service }}
 
+  security-scan:
+    uses: ./.github/workflows/sast-sca.yml
+
   build:
-    needs: checks
+    needs: [checks, security-scan]
     runs-on: ubuntu-latest
     outputs:
       image_tag: ${{ env.IMAGE_TAG }}
@@ -74,10 +77,10 @@ jobs:
           git commit -am "chore: bump images to $TAG"
           git push origin "$BRANCH"
           REPO="${{ github.repository_owner }}/devops-gitops"
-          PR=$(curl -sX POST -H "Authorization: Bearer $GITOPS_TOKEN" \
+          PR_RESP=$(curl -sX POST -H "Authorization: Bearer $GITOPS_TOKEN" \
             https://api.github.com/repos/$REPO/pulls \
-            -d "{\"title\":\"Update image to $TAG\",\"head\":\"$BRANCH\",\"base\":\"main\"}" \
-            | python3 -c "import sys,json;print(json.load(sys.stdin)['number'])")
+            -d "{\"title\":\"Update image to $TAG\",\"head\":\"$BRANCH\",\"base\":\"main\"}")
+          PR=$(echo "$PR_RESP" | python3 -c "import sys,json;print(json.load(sys.stdin)['number'])")
           curl -sX PUT -H "Authorization: Bearer $GITOPS_TOKEN" \
             https://api.github.com/repos/$REPO/pulls/$PR/merge \
             -d '{"merge_method":"squash"}'

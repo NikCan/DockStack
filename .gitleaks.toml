@@ -2,3 +2,9 @@ title = "gitleaks config"
 
 [extend]
 useDefault = true
+
+[allowlist]
+paths = [
+  '''(?i)(^|/)dist/''',
+  '''(?i)(^|/)node_modules/'''
+]

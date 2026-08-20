@@ -45,7 +45,7 @@ services:
     restart: unless-stopped
     image: ${DOCKERHUB_USERNAME}/todo-front:${APP_VERSION}
     ports:
-      - "18080:80"
+      - "18080:8080"
     depends_on:
       back:
         condition: service_started

@@ -1,4 +1,4 @@
-name: CI/CD (GitOps)
+name: CI/CD (Yandex Cloud)
 
 on:
   push:
@@ -22,80 +22,19 @@ jobs:
 
   build:
     needs: [checks, security-scan]
-    runs-on: ubuntu-latest
-    outputs:
-      image_tag: ${{ env.IMAGE_TAG }}
-    steps:
-      - uses: actions/checkout@v4
-      - uses: docker/login-action@v3
-        with:
-          username: ${{ vars.DOCKER_USER }}
-          password: ${{ secrets.DOCKER_PASS }}
-      - name: Build & push backend
-        uses: docker/build-push-action@v6
-        with:
-          context: ./back
-          push: true
-          tags: ${{ vars.DOCKER_USER }}/todo-back:${{ env.IMAGE_TAG }}
-      - name: Build & push frontend
-        uses: docker/build-push-action@v6
-        with:
-          context: ./front
-          push: true
-          build-args: VITE_API_URL=${{ vars.VITE_API_URL }}
-          tags: ${{ vars.DOCKER_USER }}/todo-front:${{ env.IMAGE_TAG }}
+    uses: ./.github/workflows/build-yc.yml
+    with:
+      image_tag: sha-${{ github.sha }}
+    secrets:
+      YC_SA_JSON_CREDENTIALS: ${{ secrets.YC_SA_JSON_CREDENTIALS }}
 
   deploy:
     needs: [build]
-    runs-on: ubuntu-latest
-    steps:
-      - name: Checkout gitops repo
-        uses: actions/checkout@v4
-        with:
-          repository: ${{ github.repository_owner }}/devops-gitops
-          token: ${{ secrets.GITOPS_TOKEN }}
-          ref: main
-          path: gitops
-
-      - name: Install yq
-        run: |
-          sudo curl -sL https://github.com/mikefarah/yq/releases/latest/download/yq_linux_amd64 -o /usr/local/bin/yq
-          sudo chmod +x /usr/local/bin/yq
-
-      - name: Bump image tags + PR + squash-merge
-        env:
-          GITOPS_TOKEN: ${{ secrets.GITOPS_TOKEN }}
-          TAG: ${{ needs.build.outputs.image_tag }}
-        run: |
-          cd gitops
-          yq e -i ".backend.image.tag = \"$TAG\""  helm/myapp/values-production.yaml
-          yq e -i ".frontend.image.tag = \"$TAG\"" helm/myapp/values-production.yaml
-          git config user.email "github-actions@github.com"
-          git config user.name  "GitHub Actions"
-          BRANCH="update-image-${{ github.run_id }}"
-          git checkout -b "$BRANCH"
-          git commit -am "chore: bump images to $TAG"
-          git push origin "$BRANCH"
-          REPO="${{ github.repository_owner }}/devops-gitops"
-          PR_RESP=$(curl -sX POST -H "Authorization: Bearer $GITOPS_TOKEN" \
-            https://api.github.com/repos/$REPO/pulls \
-            -d "{\"title\":\"Update image to $TAG\",\"head\":\"$BRANCH\",\"base\":\"main\"}")
-          PR=$(echo "$PR_RESP" | python3 -c "import sys,json;print(json.load(sys.stdin)['number'])")
-          curl -sX PUT -H "Authorization: Bearer $GITOPS_TOKEN" \
-            https://api.github.com/repos/$REPO/pulls/$PR/merge \
-            -d '{"merge_method":"squash"}'
-          git push origin --delete "$BRANCH"
-
-      - name: ArgoCD sync
-        env:
-          ARGOCD_AUTH_TOKEN: ${{ secrets.ARGOCD_AUTH_TOKEN }}
-          ARGOCD_SERVER: ${{ vars.ARGOCD_SERVER }}
-        run: |
-          sudo curl -sSL -o /usr/local/bin/argocd \
-            https://github.com/argoproj/argo-cd/releases/latest/download/argocd-linux-amd64
-          sudo chmod +x /usr/local/bin/argocd
-          argocd app sync myapp --grpc-web
-          argocd app wait myapp --grpc-web --timeout 300
+    uses: ./.github/workflows/deploy-yc.yml
+    with:
+      image_tag: ${{ needs.build.outputs.image_tag }}
+    secrets:
+      YC_SA_JSON_CREDENTIALS: ${{ secrets.YC_SA_JSON_CREDENTIALS }}
 
   verify:
     needs: deploy

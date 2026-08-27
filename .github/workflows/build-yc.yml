@@ -1,0 +1,58 @@
+name: Build and Push to YCR Template
+
+on:
+  workflow_call:
+    inputs:
+      image_tag:
+        description: "Docker image tag (e.g. sha-xxxx)"
+        required: true
+        type: string
+    outputs:
+      image_tag:
+        description: "Docker image tag pushed"
+        value: ${{ inputs.image_tag }}
+    secrets:
+      YC_SA_JSON_CREDENTIALS:
+        required: true
+
+jobs:
+  build_and_push:
+    name: Build & Push (YCR)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Install Yandex Cloud CLI
+        run: |
+          curl -sSL https://storage.yandexcloud.net/yandexcloud-yc/install.sh | bash -s -- -a
+          echo "$HOME/yandex-cloud/bin" >> $GITHUB_PATH
+
+      - name: Configure YC and Login to YCR
+        env:
+          YC_SA_KEY: ${{ secrets.YC_SA_JSON_CREDENTIALS }}
+        run: |
+          echo "$YC_SA_KEY" > /tmp/sa-key.json
+          yc config profile create sa-profile || true
+          yc config set service-account-key /tmp/sa-key.json
+          yc config set folder-id ${{ vars.YC_FOLDER_ID }}
+          yc iam create-token | docker login --username iam --password-stdin cr.yandex
+          rm -f /tmp/sa-key.json
+
+      - name: Build and Push Backend Image
+        env:
+          REG_URL: "cr.yandex/${{ vars.YC_REGISTRY_ID }}"
+          TAG: ${{ inputs.image_tag }}
+        run: |
+          docker build --platform linux/amd64 -t "$REG_URL/todo-back:$TAG" -t "$REG_URL/todo-back:latest" ./back
+          docker push "$REG_URL/todo-back:$TAG"
+          docker push "$REG_URL/todo-back:latest"
+
+      - name: Build and Push Frontend Image
+        env:
+          REG_URL: "cr.yandex/${{ vars.YC_REGISTRY_ID }}"
+          TAG: ${{ inputs.image_tag }}
+        run: |
+          docker build --platform linux/amd64 --build-arg VITE_API_URL="/api" -t "$REG_URL/todo-front:$TAG" -t "$REG_URL/todo-front:latest" ./front
+          docker push "$REG_URL/todo-front:$TAG"
+          docker push "$REG_URL/todo-front:latest"

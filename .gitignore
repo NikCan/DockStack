@@ -20,3 +20,38 @@ k8s/secret.yaml
 k8s/dockerhub-secret.yaml
 kubeconfig
 *.kubeconfig
+
+HOMEWORK_08_YC.md
+
+# --- Terraform ---
+# Служебная директория с загруженными провайдерами и модулями
+.terraform/
+.terraform.lock.hcl
+
+# Файлы состояния Terraform (могут содержать секреты и пароли в открытом виде)
+*.tfstate
+*.tfstate.*
+*.tfstate.backup
+*.tfstate.lock.info
+
+# Файлы с реальными значениями переменных и секретами
+*.tfvars
+*.tfvars.json
+*.auto.tfvars
+*.auto.tfvars.json
+
+# Исключение: оставляем пример конфигурации в git
+!terraform.tfvars.example
+!*.example.tfvars
+
+# Логи и временные файлы при падении
+crash.log
+crash.*.log
+override.tf
+override.tf.json
+*_override.tf
+*_override.tf.json
+
+# Ключи сервисных аккаунтов Yandex Cloud
+yc_authorized_key.json
+*.key.json

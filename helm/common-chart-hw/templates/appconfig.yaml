@@ -1,0 +1,12 @@
+# Runtime-конфиг (maxTodos). Backend читает /app/config/app.json при создании todo.
+# Монтируется в backend как файл (volumeMount, read-only). БЕЗ него POST /todos → 500.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: backend-appconfig
+  namespace: {{ .Values.namespace }}
+data:
+  app.json: |
+    {
+      "maxTodos": {{ .Values.appConfig.maxTodos }}
+    }

@@ -1,0 +1,20 @@
+{{- define "common-chart.servicemonitor" -}}
+{{- if .Values.monitoring.enabled }}
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: backend-monitor
+  namespace: {{ .Values.namespace }}
+  labels:
+    # Должен совпадать с именем Helm-release kube-prometheus-stack.
+    release: {{ .Values.monitoring.release }}
+spec:
+  selector:
+    matchLabels:
+      app: {{ .Values.backend.name }}
+  endpoints:
+    - port: http
+      path: /metrics
+      interval: 15s
+{{- end }}
+{{- end }}

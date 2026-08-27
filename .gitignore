@@ -55,3 +55,6 @@ override.tf.json
 # Ключи сервисных аккаунтов Yandex Cloud
 yc_authorized_key.json
 *.key.json
+
+charts/
+*.tgz

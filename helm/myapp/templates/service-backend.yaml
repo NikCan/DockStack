@@ -1,0 +1,17 @@
+# Service backend. Имя `backend` и named port `http` — контракт: на них ссылаются
+# Ingress (/api rewrite) и ServiceMonitor. Порт 80 снаружи → 3000 в контейнере.
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ .Values.backend.name }}
+  namespace: {{ .Values.namespace }}
+  labels:
+    app: {{ .Values.backend.name }}
+spec:
+  selector:
+    app: {{ .Values.backend.name }}
+  ports:
+    - name: http
+      port: 80
+      targetPort: {{ .Values.backend.port }}
+  type: ClusterIP

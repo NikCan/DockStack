@@ -1,0 +1,87 @@
+{{- define "common-chart.backend-deployment" -}}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ .Values.backend.name }}
+  namespace: {{ .Values.namespace }}
+  labels:
+    app: {{ .Values.backend.name }}
+spec:
+  replicas: {{ .Values.backend.replicaCount }}
+  selector:
+    matchLabels:
+      app: {{ .Values.backend.name }}
+  template:
+    metadata:
+      labels:
+        app: {{ .Values.backend.name }}
+    spec:
+      # Pod-level Security Context: запрет root, фиксированный UID/GID.
+      securityContext:
+        runAsNonRoot: {{ .Values.backend.securityContext.runAsNonRoot }}
+        runAsUser: {{ .Values.backend.securityContext.runAsUser }}
+        runAsGroup: {{ .Values.backend.securityContext.runAsGroup }}
+      {{- if .Values.image.pullSecret }}
+      imagePullSecrets:
+        - name: {{ .Values.image.pullSecret }}
+      {{- end }}
+      containers:
+        - name: {{ .Values.backend.name }}
+          image: "{{ .Values.backend.image.repository }}:{{ .Values.backend.image.tag }}"
+          ports:
+            - name: http          # именованный порт нужен ServiceMonitor
+              containerPort: {{ .Values.backend.port }}
+          # Container-level Security Context: read-only ФС + запрет повышения привилегий.
+          securityContext:
+            readOnlyRootFilesystem: {{ .Values.backend.securityContext.readOnlyRootFilesystem }}
+            allowPrivilegeEscalation: {{ .Values.backend.securityContext.allowPrivilegeEscalation }}
+          envFrom:
+            - configMapRef:
+                name: backend-config
+            - secretRef:
+                name: backend-secret
+          env:
+            # APP_VERSION отдаётся на /health — агент сверяет с sha коммита week7.
+            - name: APP_VERSION
+              value: "{{ .Values.backend.image.tag }}"
+          startupProbe:
+            httpGet:
+              path: {{ .Values.backend.probes.health }}
+              port: {{ .Values.backend.port }}
+            failureThreshold: 20
+            periodSeconds: 3
+          livenessProbe:
+            httpGet:
+              path: {{ .Values.backend.probes.health }}
+              port: {{ .Values.backend.port }}
+            periodSeconds: 15
+            failureThreshold: 3
+          readinessProbe:
+            httpGet:
+              path: {{ .Values.backend.probes.ready }}
+              port: {{ .Values.backend.port }}
+            periodSeconds: 10
+            failureThreshold: 3
+          resources:
+            requests:
+              cpu: {{ .Values.backend.resources.requests.cpu | quote }}
+              memory: {{ .Values.backend.resources.requests.memory | quote }}
+            limits:
+              cpu: {{ .Values.backend.resources.limits.cpu | quote }}
+              memory: {{ .Values.backend.resources.limits.memory | quote }}
+          volumeMounts:
+            # Runtime-конфиг read-only (ConfigMap backend-appconfig).
+            - name: app-config
+              mountPath: /app/config
+              readOnly: true
+            # /tmp writable — т.к. корневая ФС read-only (readOnlyRootFilesystem).
+            - name: tmp
+              mountPath: /tmp
+      volumes:
+        - name: app-config
+          configMap:
+            name: backend-appconfig
+        - name: tmp
+          emptyDir: {}
+{{- end }}
+

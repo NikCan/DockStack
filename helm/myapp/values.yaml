@@ -1,0 +1,83 @@
+# Базовые значения чарта myapp. Секреты (DB_USER/DB_PASSWORD) — в secrets.yaml (SOPS).
+# Теги образов переопределяются в values-production.yaml (их бампает CI).
+#
+namespace: homework
+
+image:
+  # Zero-Secret: очищаем pullSecret (ноды в YC скачивают образы через IAM-роль)
+  pullSecret: ""
+
+backend:
+  name: backend
+  image:
+    repository: cr.yandex/crpm45aocrdi7tmp24hf/todo-back
+    tag: "latest" # переопределяется в values-production.yaml (бампает CI на sha-<sha>)
+  port: 3000
+  replicaCount: 2 # single-node: 2 реплики сядут на ту же ноду + не влезают в 2 CPU с ArgoCD
+  probes:
+    health: /health # у backend НЕТ префикса /api — роуты в корне
+    ready: /ready
+  resources:
+    requests:
+      cpu: "100m"
+      memory: "128Mi"
+    limits:
+      cpu: "300m"
+      memory: "256Mi"
+  # Security Context (урок 06). runAsUser обязателен: образ node:20-alpine без USER
+  # запускается от root, а runAsNonRoot без явного UID уронит Pod в CreateContainerConfigError.
+  securityContext:
+    runAsNonRoot: true
+    runAsUser: 1000
+    runAsGroup: 1000
+    readOnlyRootFilesystem: true
+    allowPrivilegeEscalation: false
+
+frontend:
+  name: frontend
+  image:
+    repository: cr.yandex/crpm45aocrdi7tmp24hf/todo-front
+    tag: "latest" # переопределяется в values-production.yaml
+  port: 8080
+  replicaCount: 2 # single-node
+  resources:
+    requests:
+      cpu: "50m"
+      memory: "32Mi"
+    limits:
+      cpu: "100m"
+      memory: "64Mi"
+
+# Несекретная конфигурация backend → ConfigMap backend-config (envFrom).
+# Backend читает ДИСКРЕТНЫЕ DB_* переменные (не единый DATABASE_URL).
+envs:
+  configMap:
+    NODE_ENV: "production"
+    PORT: "3000"
+    DB_HOST: "postgres" # имя Headless Service из чарта postgres
+    DB_PORT: "5432"
+    DB_NAME: "todo" # совпадает с dbName в чарте postgres
+    CORS_ORIGIN: ""
+
+# Runtime-конфиг приложения → ConfigMap backend-appconfig, монтируется в
+# /app/config/app.json. БЕЗ него POST /todos → 500 ENOENT (баг из hw6).
+appConfig:
+  maxTodos: 5
+
+ingress:
+  host: hw.nik-can-dev.quest
+  tlsSecret: app-tls
+  clusterIssuer: letsencrypt-prod
+
+# SOFT: HPA требует metrics-server. По умолчанию выключен, иначе бесполезен без метрик.
+hpa:
+  enabled: false
+  minReplicas: 2
+  maxReplicas: 6
+  cpuUtilization: 70
+
+# SOFT: ServiceMonitor требует CRD monitoring.coreos.com (kube-prometheus-stack).
+# По умолчанию выключен, иначе ArgoCD-синк уходит в Degraded (нет CRD).
+monitoring:
+  enabled: false
+  release: kube-prometheus-stack

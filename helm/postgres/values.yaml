@@ -1,0 +1,8 @@
+# Несекретные значения postgres-чарта. Секреты (dbUser/dbPassword) — в secrets.yaml
+# (шифруется SOPS). dbName не секрет — это просто имя базы, совпадает с DB_NAME в myapp.
+image: postgres:16-alpine
+
+storage: 1Gi
+
+# Имя базы. ДОЛЖНО совпадать с envs.configMap.DB_NAME в чарте myapp.
+dbName: todo

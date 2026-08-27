@@ -1,0 +1,6 @@
+dependencies:
+- name: common-chart-hw
+  repository: oci://cr.yandex/crpm45aocrdi7tmp24hf
+  version: 0.1.1
+digest: sha256:d3b9b55010aad40f1a5442d727c958c65ef012a0ee577e3a653776b694aeba10
+generated: "2026-08-27T11:07:11.109186+03:00"

@@ -1,0 +1,10 @@
+apiVersion: v2
+name: myapp
+description: Todo-приложение (backend + frontend + ingress) для ArgoCD
+type: application
+version: 0.1.0
+appVersion: "1.0.0"
+dependencies:
+  - name: common-chart-hw
+    version: "0.1.1"
+    repository: "oci://cr.yandex/crpm45aocrdi7tmp24hf"

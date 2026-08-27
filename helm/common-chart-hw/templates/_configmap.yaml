@@ -1,0 +1,12 @@
+{{- define "common-chart.configmap" -}}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: backend-config
+  namespace: {{ .Values.namespace }}
+data:
+  {{- range $k, $v := .Values.envs.configMap }}
+  {{ $k }}: "{{ $v }}"
+  {{- end }}
+{{- end }}
+

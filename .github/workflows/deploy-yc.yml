@@ -54,6 +54,7 @@ jobs:
           REG_URL: "cr.yandex/${{ vars.YC_REGISTRY_ID }}"
           TAG: ${{ inputs.image_tag }}
         run: |
+          helm package ./gitops/helm/common-chart-hw -d ./gitops/helm/myapp/charts/
           helm upgrade --install myapp ./gitops/helm/myapp \
             --namespace homework \
             --reuse-values \

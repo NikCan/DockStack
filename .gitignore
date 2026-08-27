@@ -58,3 +58,4 @@ yc_authorized_key.json
 
 charts/
 *.tgz
+age-key.txt

@@ -1,0 +1,6 @@
+# SOPS читает этот файл автоматически. Все secrets*.yaml внутри helm/ шифруются
+# твоим age-публичным ключом.
+
+creation_rules:
+  - path_regex: helm/.*/secrets.*\.yaml$
+    age: age1grru8e89e57ukuvud3x5nxk9kjra8vcw89krz4sl47uza3g9e9gqrjn2zs
